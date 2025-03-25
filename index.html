@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Willow Browser</title>
+    <style>
+        /* Remove favicon */
+        link[rel*='icon'] {
+            display: none;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #navbar {
+            padding: 10px;
+            background: #f1f1f1;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        #navbar button {
+            width: 32px;
+            height: 32px;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background: white;
+        }
+        #navbar button:hover {
+            background: #e9e9e9;
+        }
+        #urlBar {
+            flex-grow: 1;
+            padding: 5px;
+        }
+        #webview {
+            flex-grow: 1;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="navbar">
+        <button onclick="goBack()">←</button>
+        <button onclick="goForward()">→</button>
+        <button onclick="refresh()">↻</button>
+        <input type="text" id="urlBar" onkeypress="handleUrl(event)">
+        <span id="timer" style="padding: 5px; min-width: 50px;"></span>
+    </div>
+    <webview id="webview" 
+        src="https://www.google.com/"
+        nodeintegration
+        webpreferences="contextIsolation=false"
+        allowpopups>
+    </webview>
+
+    <script>
+        const webview = document.getElementById('webview');
+        const urlBar = document.getElementById('urlBar');
+        const timerDisplay = document.getElementById('timer');
+        let config = null;
+        let currentUrlIndex = 0;
+        let refreshTimer = null;
+        let countdownTimer = null;
+        let timeLeft = 0;
+        let userInteracting = false;  // Add this line
+
+        // Add config loading at startup
+        fetch('config.json')
+            .then(response => response.json())
+            .then(data => {
+                config = data;
+                checkCurrentUrl();
+            })
+            .catch(error => console.error('Error loading config:', error));
+
+        function updateTimerDisplay() {
+            if (timeLeft > 0) {
+                timerDisplay.textContent = `${timeLeft}s`;
+                timeLeft--;
+                countdownTimer = setTimeout(updateTimerDisplay, 1000);
+            }
+        }
+
+        function loadNextUrl() {
+            if (!config || !config.urls.length || userInteracting) return;
+            
+            const urlConfig = config.urls[currentUrlIndex];
+            webview.src = urlConfig.url;
+            urlBar.value = urlConfig.url;
+
+            if (refreshTimer) clearTimeout(refreshTimer);
+            if (countdownTimer) clearTimeout(countdownTimer);
+
+            timeLeft = urlConfig.refresh_interval;
+            updateTimerDisplay();
+
+            refreshTimer = setTimeout(() => {
+                webview.reload();
+                timeLeft = urlConfig.refresh_interval;
+                updateTimerDisplay();
+            }, urlConfig.refresh_interval * 1000);
+        }
+
+        function handleUrl(e) {
+            if (e.key === 'Enter') {
+                let input = urlBar.value.trim();
+                let url;
+                
+                // Check if input is a valid URL
+                if (input.match(/^(https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w-./?%&=]*)?$/)) {
+                    url = !input.startsWith('http://') && !input.startsWith('https://')
+                        ? 'https://' + input
+                        : input;
+                } else {
+                    // Treat as search term
+                    url = `https://www.google.com/search?q=${encodeURIComponent(input)}`;
+                }
+                
+                webview.loadURL(url);
+                userInteracting = true;
+                
+                if (refreshTimer) clearTimeout(refreshTimer);
+                if (countdownTimer) clearTimeout(countdownTimer);
+                timerDisplay.textContent = '';
+            }
+        }
+
+        // Update URL when page changes
+        webview.addEventListener('did-navigate', (event) => {
+            urlBar.value = event.url;
+        });
+
+        // Add webview initialization
+        webview.addEventListener('dom-ready', () => {
+            console.log('WebView ready');
+            urlBar.value = webview.getURL();
+        });
+
+        // Add error handling
+        webview.addEventListener('did-fail-load', (error) => {
+            console.error('Failed to load:', error);
+        });
+
+        function goBack() {
+            if (webview.canGoBack()) {
+                webview.goBack();
+            }
+        }
+
+        function goForward() {
+            if (webview.canGoForward()) {
+                webview.goForward();
+            }
+        }
+
+        function refresh() {
+            webview.reload();
+            // Reset timer on manual refresh
+            checkCurrentUrl();
+        }
+
+        function checkCurrentUrl() {
+            if (!config) return;
+            
+            const currentUrl = webview.getURL();
+            const configUrl = config.urls.find(u => currentUrl.startsWith(u.url));
+            
+            if (configUrl) {
+                // Clear existing timers
+                if (refreshTimer) clearTimeout(refreshTimer);
+                if (countdownTimer) clearTimeout(countdownTimer);
+                
+                userInteracting = false;
+                currentUrlIndex = config.urls.indexOf(configUrl);
+                timeLeft = configUrl.refresh_interval;
+                updateTimerDisplay();
+                
+                refreshTimer = setTimeout(() => {
+                    webview.reload();
+                    timeLeft = configUrl.refresh_interval;
+                    updateTimerDisplay();
+                }, configUrl.refresh_interval * 1000);
+            } else {
+                // Clear timers when not on a configured URL
+                if (refreshTimer) clearTimeout(refreshTimer);
+                if (countdownTimer) clearTimeout(countdownTimer);
+                timerDisplay.textContent = '';
+                timeLeft = 0;
+            }
+        }
+
+        function updateTimerDisplay() {
+            if (countdownTimer) clearTimeout(countdownTimer);
+            
+            if (timeLeft > 0) {
+                timerDisplay.textContent = `${timeLeft}s`;
+                timeLeft--;
+                countdownTimer = setTimeout(updateTimerDisplay, 1000);
+            }
+        }
+
+        // Update URL check when navigation completes
+        webview.addEventListener('did-navigate', (event) => {
+            urlBar.value = event.url;
+            checkCurrentUrl();
+        });
+    </script>
+</body>
+</html>

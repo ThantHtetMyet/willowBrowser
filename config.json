@@ -1,0 +1,12 @@
+{
+    "urls": [
+        {
+            "url": "https://www.flaticon.com/pricing",
+            "refresh_interval": 30
+        },
+        {
+            "url": "https://github.com/resources/articles/ai",
+            "refresh_interval": 60
+        }
+    ]
+}
